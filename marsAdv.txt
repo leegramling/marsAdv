@@ -1,0 +1,641 @@
+I’d give Codex a fairly specific architecture so it creates a **small learning project**, rather than immediately inventing a large game engine. The Rust/Axum side should own all game state and rules; Svelte should primarily be the presentation layer.
+
+# Build a Rust + Axum + Svelte Text Adventure
+
+Create a small, clean starter project for a browser-based text adventure game set in a partially constructed Mars silo.
+
+The primary purpose of this project is for me to learn Rust. Keep the Rust code straightforward, idiomatic, and easy to understand. Do not over-engineer the architecture or introduce complicated frameworks, ECS systems, databases, authentication, or unnecessary abstractions.
+
+## Technology
+
+Use:
+
+* Rust, current stable edition
+* Axum for the backend HTTP server
+* Tokio for the async runtime
+* Serde / serde_json for JSON
+* Svelte with TypeScript for the frontend
+* Vite for the Svelte development environment
+* Standard CSS; do not add a large UI framework
+
+Organize the repository approximately as:
+
+```text
+mars-silo/
+├── README.md
+├── server/
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs
+│       ├── game.rs
+│       ├── command.rs
+│       └── world.rs
+└── client/
+    ├── package.json
+    ├── vite.config.ts
+    └── src/
+        ├── App.svelte
+        └── lib/
+            └── api.ts
+```
+
+Keep the number of files small. If an even simpler organization makes sense initially, prefer simplicity.
+
+# Game concept
+
+The game is called:
+
+**ARES SILO 7**
+
+It takes place on Mars in a large underground habitat and industrial silo that is still under construction.
+
+Construction robots have begun behaving erratically. The player wakes during an emergency and must explore the facility, diagnose failures, repair systems, seal doors, restore utilities, and eventually determine why the robots are behaving incorrectly.
+
+The initial prototype should only contain three rooms:
+
+1. Control Room
+2. Water Pump Room
+3. Robot Bay
+
+The initial gameplay progression is:
+
+```text
+CONTROL ROOM
+     |
+     | south
+     v
+WATER PUMP ROOM
+     |
+     | east
+     v
+ROBOT BAY
+```
+
+The Control Room initially contains a wrench.
+
+The player must:
+
+1. Look around.
+2. Take the wrench.
+3. Travel south to the Water Pump Room.
+4. Inspect the damaged water pump.
+5. Repair the pump using the wrench.
+6. Travel east to the Robot Bay.
+7. Observe the malfunctioning construction robots.
+
+Do not implement a large story beyond this yet.
+
+# Architecture
+
+The Rust server owns the authoritative game state.
+
+The Svelte application is a UI for displaying the game and sending commands.
+
+Conceptually:
+
+```text
+                 Browser
+              Svelte / TS
+                   |
+                   | HTTP / JSON
+                   v
+                 Axum
+                   |
+                   v
+             Command Parser
+                   |
+                   v
+                 Game
+              /        \
+          Player       World
+                       /   \
+                    Rooms  Systems
+```
+
+Do not duplicate game rules in TypeScript.
+
+For example, Svelte should not determine whether the player can move east or whether the wrench can repair the pump.
+
+Svelte sends commands such as:
+
+```text
+take wrench
+```
+
+and Rust determines what happens.
+
+# Rust game model
+
+Start with simple Rust structures and enums.
+
+Something approximately like:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Location {
+    ControlRoom,
+    PumpRoom,
+    RobotBay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Item {
+    Wrench,
+}
+
+struct Player {
+    location: Location,
+    inventory: Vec<Item>,
+}
+
+struct Pump {
+    damaged: bool,
+    running: bool,
+    pressure: f32,
+}
+
+struct Game {
+    player: Player,
+    pump: Pump,
+    wrench_location: Option<Location>,
+    turn: u32,
+}
+```
+
+These are suggestions rather than mandatory exact definitions.
+
+Prefer owned data rather than putting references/lifetimes inside the game structures.
+
+I am learning Rust, so favor clear ownership over clever abstractions.
+
+# Commands
+
+Create a Rust command enum similar to:
+
+```rust
+enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+
+enum Command {
+    Move(Direction),
+    Look,
+    Take(String),
+    Inspect(String),
+    Repair(String),
+    Inventory,
+    Help,
+    Quit,
+    Unknown(String),
+}
+```
+
+Implement:
+
+```rust
+fn parse_command(input: &str) -> Command
+```
+
+Use Rust pattern matching where appropriate.
+
+Recognize commands such as:
+
+```text
+look
+l
+
+north
+n
+
+south
+s
+
+east
+e
+
+west
+w
+
+go south
+
+take wrench
+get wrench
+
+inspect pump
+examine pump
+
+repair pump
+fix pump
+
+inventory
+i
+
+help
+```
+
+Keep the parser intentionally simple. Do not use a parser library.
+
+# Game command execution
+
+Have the game execute parsed commands through something conceptually similar to:
+
+```rust
+impl Game {
+    fn execute(&mut self, command: Command) -> GameResponse {
+        // ...
+    }
+}
+```
+
+Create a serializable response structure.
+
+For example:
+
+```rust
+#[derive(Serialize)]
+struct GameResponse {
+    message: String,
+    location: String,
+    inventory: Vec<String>,
+    turn: u32,
+}
+```
+
+You may add useful fields such as:
+
+```rust
+available_exits: Vec<String>
+```
+
+but keep the response compact.
+
+# Pump puzzle
+
+The Water Pump Room contains a damaged pump.
+
+If the player types:
+
+```text
+inspect pump
+```
+
+before repairing it, return something similar to:
+
+```text
+Pump 3 is vibrating violently.
+
+The outlet pressure coupling has partially separated.
+It looks like it could be tightened with a wrench.
+```
+
+If the player attempts:
+
+```text
+repair pump
+```
+
+without the wrench:
+
+```text
+You need a tool to tighten the damaged coupling.
+```
+
+If the player has the wrench:
+
+```text
+You tighten the pressure coupling.
+
+The violent vibration slowly subsides.
+
+Pump 3 returns to normal operation.
+```
+
+Then set:
+
+```rust
+pump.damaged = false;
+```
+
+The important part is that this is represented as actual Rust game state, not merely different text.
+
+# Turn system
+
+Increment:
+
+```rust
+game.turn
+```
+
+after successful game commands.
+
+Keep the turn system simple.
+
+When the pump is damaged, pressure can increase slightly each turn.
+
+For example:
+
+```rust
+if self.pump.damaged {
+    self.pump.pressure += 2.0;
+}
+```
+
+Do not implement game-over pressure behavior yet.
+
+This is simply to demonstrate how the world can evolve independently of player movement.
+
+# Axum API
+
+Create a minimal REST API.
+
+For example:
+
+```text
+POST /api/game/new
+POST /api/game/command
+GET  /api/game/state
+```
+
+`POST /api/game/new`
+
+creates/resets the game.
+
+`POST /api/game/command`
+
+accepts:
+
+```json
+{
+    "command": "take wrench"
+}
+```
+
+and returns something like:
+
+```json
+{
+    "message": "You pick up the wrench.",
+    "location": "Control Room",
+    "inventory": ["Wrench"],
+    "turn": 2,
+    "available_exits": ["south"]
+}
+```
+
+For this prototype it is acceptable for Axum to maintain one game instance in memory using something simple such as:
+
+```rust
+Arc<Mutex<Game>>
+```
+
+or:
+
+```rust
+Arc<RwLock<Game>>
+```
+
+Explain briefly why you selected one.
+
+Do not add a database.
+
+Do not add user accounts or multiple-player sessions yet.
+
+# Svelte UI
+
+Create a simple terminal-inspired interface.
+
+The page should approximately look like:
+
+```text
+---------------------------------------------------------
+ARES SILO 7
+Mars Construction Facility
+
+LOCATION: WATER PUMP ROOM                 TURN: 7
+---------------------------------------------------------
+
+Red emergency lights pulse along the unfinished walls.
+
+Pump 3 is vibrating violently.
+
+The outlet pressure coupling has partially separated.
+It looks like it could be tightened with a wrench.
+
+> inspect pump
+> repair pump
+
+You tighten the pressure coupling.
+
+The violent vibration slowly subsides.
+
+Pump 3 returns to normal operation.
+
+---------------------------------------------------------
+Inventory
+  Wrench
+
+Exits
+  North
+  East
+---------------------------------------------------------
+
+> [ command input                                      ]
+---------------------------------------------------------
+```
+
+The main UI should contain:
+
+* game title
+* current location
+* turn number
+* scrolling transcript/history
+* inventory
+* available exits
+* command text input
+* Restart Game button
+
+When the player enters a command:
+
+1. Add the command to the transcript.
+2. Send it to Axum.
+3. Receive the JSON response.
+4. Add the response message to the transcript.
+5. Update location, inventory, exits, and turn.
+6. Clear the command input.
+7. Return focus to the command input.
+8. Scroll the transcript to the newest entry.
+
+Allow Enter to submit the command.
+
+# API boundary
+
+Create a small TypeScript API module so `App.svelte` does not contain raw `fetch()` logic everywhere.
+
+For example:
+
+```typescript
+export interface GameResponse {
+    message: string;
+    location: string;
+    inventory: string[];
+    turn: number;
+    available_exits: string[];
+}
+
+export async function sendCommand(
+    command: string
+): Promise<GameResponse> {
+    // ...
+}
+```
+
+Keep TypeScript minimal.
+
+# Important Rust learning goals
+
+I am an experienced C++ developer learning Rust.
+
+Write the Rust code so I can study the following concepts:
+
+* structs
+* impl blocks
+* enums
+* pattern matching
+* String
+* &str
+* Vec
+* Option
+* Result
+* ownership
+* borrowing
+* mutable borrowing
+* iterators
+* Serde
+* Arc
+* Mutex or RwLock
+* Axum handlers
+* Tokio async functions
+
+Do not intentionally force all of these into the project if they do not naturally belong.
+
+When there is a choice between sophisticated Rust and easily understood idiomatic Rust, prefer the easily understood implementation.
+
+Avoid unnecessary:
+
+* lifetimes on structs
+* traits
+* generics
+* macros
+* dynamic dispatch
+* ECS architecture
+* dependency injection
+* complex error frameworks
+
+We can introduce those later when the game becomes complex enough to justify them.
+
+# Separation of responsibilities
+
+Keep the layers approximately:
+
+```text
+Svelte
+    UI and user interaction
+        |
+        v
+Axum
+    HTTP boundary
+        |
+        v
+Command parser
+    text -> Command
+        |
+        v
+Game
+    rules and state changes
+        |
+        v
+World
+    rooms, items, systems
+```
+
+In particular:
+
+**The game should be playable without depending on Svelte-specific logic.**
+
+This will make it possible later to add another interface, such as a terminal client, without rewriting the game rules.
+
+# README
+
+Create a README explaining exactly how to run the project in development.
+
+Include commands for:
+
+```text
+server/
+    cargo run
+
+client/
+    npm install
+    npm run dev
+```
+
+Explain the expected localhost ports and how the Svelte frontend reaches the Axum API.
+
+Configure CORS appropriately for local development if necessary.
+
+# Tests
+
+Add a few small Rust unit tests for the game logic.
+
+At minimum test:
+
+1. Player starts in Control Room.
+2. Player can move south to Pump Room.
+3. Player cannot move in an invalid direction.
+4. Player can take wrench.
+5. Player cannot repair pump without wrench.
+6. Player can repair pump with wrench.
+7. `parse_command("take wrench")` produces the expected command.
+8. `parse_command("south")` produces `Move(Direction::South)`.
+
+Keep the tests straightforward so they also serve as examples of Rust testing.
+
+# Implementation approach
+
+Build this in small stages.
+
+First create the directory structure and project configuration.
+
+Then implement:
+
+1. Rust game model
+2. command parser
+3. game execution
+4. Rust unit tests
+5. Axum server
+6. JSON API
+7. Svelte UI
+8. API integration
+9. README
+
+Run:
+
+```text
+cargo fmt
+cargo clippy
+cargo test
+```
+
+and fix reasonable warnings/errors.
+
+Also run the Svelte/TypeScript checks and make sure the client builds.
+
+Do not just generate placeholder files. Produce a working minimal prototype.
+
+Most importantly, keep the first version small. I want a foundation that I can personally extend while learning Rust rather than a complete adventure-game engine.
+
+Once Codex has this working, a good next step is for **you** to implement the fourth room and its puzzle yourself—rather than asking Codex to do it. For example, add a `PowerRoom`, `Fuse` item, and generator puzzle. That will force you to modify the enums, parser, world state, inventory, and `match` logic, which is exactly the Rust practice this project is good for.
+

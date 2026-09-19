@@ -1,0 +1,13 @@
+:root { font-family: monospace; color: #d7f9d0; background: #101510; }
+body { max-width: 900px; margin: 0 auto; padding: 2rem; }
+header { border-bottom: 1px solid #5d9b55; }
+h1 { margin-bottom: 0; color: #8cff75; }
+.status { display: flex; justify-content: space-between; padding: 1rem 0; color: #f2bd68; }
+.terminal { min-height: 360px; border: 1px solid #376b35; padding: 1rem; white-space: pre-wrap; }
+.command { color: #f2bd68; }
+aside { display: flex; gap: 5rem; border-bottom: 1px solid #376b35; margin-bottom: 1rem; }
+h2 { font-size: 1rem; color: #8cff75; }
+form { display: flex; gap: .5rem; }
+input { flex: 1; padding: .7rem; background: #182219; border: 1px solid #5d9b55; color: inherit; font: inherit; }
+button { padding: .7rem 1rem; background: #294d29; border: 1px solid #8cff75; color: inherit; font: inherit; cursor: pointer; }
+button:hover { background: #376b35; }

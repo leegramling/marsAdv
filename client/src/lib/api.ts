@@ -1,6 +1,7 @@
 export interface GameResponse {
   message: string;
   location: string;
+  prompt: string;
   inventory: string[];
   turn: number;
   available_exits: string[];
@@ -17,3 +18,12 @@ export async function sendCommand(command: string): Promise<GameResponse> {
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
+
+export async function validateScene(scene: SceneDocument): Promise<{ valid: boolean; errors: string[] }> {
+  const response = await fetch('http://127.0.0.1:5000/api/scenes/validate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scene)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+import type { SceneDocument } from './scenes';
